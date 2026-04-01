@@ -51,6 +51,7 @@ async function connectSocket(
   phoneNumber?: string,
   isReconnect = false,
 ): Promise<void> {
+  let intentionalClose = false;
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
   if (state.creds.registered && !isReconnect) {
@@ -78,6 +79,8 @@ async function connectSocket(
     printQRInTerminal: false,
     logger,
     browser: Browsers.macOS('Chrome'),
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
   });
 
   if (usePairingCode && phoneNumber && !state.creds.me) {
@@ -113,6 +116,7 @@ async function connectSocket(
     }
 
     if (connection === 'close') {
+      if (intentionalClose) return;
       const reason = (lastDisconnect?.error as any)?.output?.statusCode;
 
       if (reason === DisconnectReason.loggedOut) {
@@ -145,8 +149,20 @@ async function connectSocket(
       console.log('  Credentials saved to store/auth/');
       console.log('  You can now start the NanoClaw service.\n');
 
-      // Give it a moment to save credentials, then exit
-      setTimeout(() => process.exit(0), 1000);
+      // Wait for registration handshake, then close the socket cleanly before exiting.
+      // Closing before exit prevents a brief overlap where both auth socket and the
+      // service socket are connected simultaneously (same device ID → WhatsApp 401).
+      const deadline = Date.now() + 10000;
+      const checkRegistered = setInterval(async () => {
+        await saveCreds();
+        if (state.creds.registered || Date.now() >= deadline) {
+          clearInterval(checkRegistered);
+          // Close socket cleanly so WhatsApp releases the device slot before the service reconnects
+          intentionalClose = true;
+          sock.end(undefined);
+          setTimeout(() => process.exit(0), 2000);
+        }
+      }, 500);
     }
   });
 

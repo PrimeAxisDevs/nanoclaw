@@ -99,6 +99,8 @@ export class WhatsAppChannel implements Channel {
       printQRInTerminal: false,
       logger: baileysLogger,
       browser: Browsers.macOS('Chrome'),
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
       cachedGroupMetadata: async (jid: string) =>
         this.getNormalizedGroupMetadata(jid),
       getMessage: async (key: WAMessageKey) => {
@@ -472,27 +474,17 @@ export class WhatsAppChannel implements Channel {
     }
 
     const metadata = await this.sock.groupMetadata(jid);
-    const participants = await Promise.all(
-      metadata.participants.map(async (participant) => ({
-        ...participant,
-        id: await this.translateJid(participant.id),
-      })),
-    );
-    const normalized = { ...metadata, participants };
-    const mappedCount = participants.filter(
-      (participant, index) => participant.id !== metadata.participants[index]?.id,
-    ).length;
 
     logger.info(
-      { jid, participantCount: participants.length, mappedCount },
-      'Prepared normalized group metadata for send',
+      { jid, participantCount: metadata.participants.length },
+      'Fetched group metadata for send',
     );
 
     this.groupMetadataCache.set(jid, {
-      metadata: normalized,
+      metadata,
       expiresAt: Date.now() + 60_000,
     });
-    return normalized;
+    return metadata;
   }
 
   private async flushOutgoingQueue(): Promise<void> {

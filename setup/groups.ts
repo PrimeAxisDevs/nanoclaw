@@ -111,7 +111,8 @@ async function syncGroups(projectRoot: string): Promise<void> {
   let syncOk = false;
   try {
     const syncScript = `
-import makeWASocket, { useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } from '@whiskeysockets/baileys';
+import baileysModule from '@whiskeysockets/baileys';
+const { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } = baileysModule;
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
@@ -173,7 +174,8 @@ sock.ev.on('connection.update', async (update) => {
     }
   } else if (update.connection === 'close') {
     clearTimeout(timeout);
-    console.error('CONNECTION_CLOSED');
+    const reason = update.lastDisconnect?.error?.output?.statusCode;
+    console.error('CONNECTION_CLOSED:' + reason);
     process.exit(1);
   }
 });
