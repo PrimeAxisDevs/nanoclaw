@@ -411,6 +411,8 @@ async function runQuery(
         'NotebookEdit',
         'mcp__nanoclaw__*',
         'mcp__gmail__*',
+        'mcp__ollama__*',
+        'mcp__grok__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -429,6 +431,21 @@ async function runQuery(
         gmail: {
           command: 'npx',
           args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+        },
+        ollama: {
+          command: 'node',
+          args: [path.join(path.dirname(mcpServerPath), 'ollama-mcp-stdio.js')],
+          env: {
+            OLLAMA_HOST: process.env.OLLAMA_HOST ?? '',
+            OLLAMA_ADMIN_TOOLS: process.env.OLLAMA_ADMIN_TOOLS ?? '',
+          },
+        },
+        grok: {
+          command: 'node',
+          args: [path.join(path.dirname(mcpServerPath), 'grok-mcp-stdio.js')],
+          env: {
+            GROK_API_KEY: process.env.GROK_API_KEY ?? '',
+          },
         },
       },
       hooks: {
