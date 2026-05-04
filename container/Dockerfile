@@ -24,9 +24,22 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     curl \
     git \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python trading/analysis packages
+RUN pip3 install --break-system-packages \
+    yfinance \
+    pandas \
+    numpy \
+    ta \
+    requests
+
 # Set Chromium path for agent-browser
+# Copy trading skills
+COPY skills/ /home/node/.claude/skills/
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 

@@ -70,6 +70,28 @@ export interface ScheduledTask {
   created_at: string;
 }
 
+export interface Trade {
+  id: string;
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss: number;
+  take_profit: number | null;
+  pnl_pips: number | null;
+  pnl_usd: number | null;
+  lot_size: number;
+  entry_time: string;
+  exit_time: string | null;
+  duration_minutes: number | null;
+  outcome: 'win' | 'loss' | 'break_even' | null;
+  status: 'open' | 'closed';
+  signal_source: string;
+  session: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface TaskRunLog {
   task_id: string;
   run_at: string;

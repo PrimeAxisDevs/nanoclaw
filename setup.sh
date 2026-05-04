@@ -73,9 +73,9 @@ install_deps() {
   cd "$PROJECT_ROOT"
 
   # npm install with --unsafe-perm if root (needed for native modules)
-  local npm_flags=""
+  local npm_flags="--legacy-peer-deps"
   if [ "$IS_ROOT" = "true" ]; then
-    npm_flags="--unsafe-perm"
+    npm_flags="$npm_flags --unsafe-perm"
     log "Running as root, using --unsafe-perm"
   fi
 

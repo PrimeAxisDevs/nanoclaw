@@ -1,5 +1,9 @@
+import dns from 'dns';
 import fs from 'fs';
 import path from 'path';
+
+// Node 18+ prefers IPv6 by default; force IPv4-first so grammy/fetch can reach Telegram
+dns.setDefaultResultOrder('ipv4first');
 
 import { OneCLI } from '@onecli-sh/sdk';
 
@@ -42,6 +46,7 @@ import {
   setRegisteredGroup,
   setRouterState,
   setSession,
+  deleteSession,
   storeChatMetadata,
   storeMessage,
 } from './db.js';
@@ -283,32 +288,38 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let hadError = false;
   let outputSentToUser = false;
 
-  const output = await runAgent(group, prompt, chatJid, imageAttachments, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
-      if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
+  const output = await runAgent(
+    group,
+    prompt,
+    chatJid,
+    imageAttachments,
+    async (result) => {
+      // Streaming output callback — called for each agent result
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
+        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
+        if (text) {
+          await channel.sendMessage(chatJid, text);
+          outputSentToUser = true;
+        }
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
+      if (result.status === 'success') {
+        queue.notifyIdle(chatJid);
+      }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  });
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+  );
 
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -406,6 +417,20 @@ async function runAgent(
     }
 
     if (output.status === 'error') {
+      // If the session file was deleted (e.g. Claude Code compacted it away),
+      // clear the stale session ID so the next run starts fresh instead of
+      // retrying forever with a session that can never be resumed.
+      if (
+        output.error?.includes('No conversation found with session ID') &&
+        sessions[group.folder]
+      ) {
+        logger.warn(
+          { group: group.name, sessionId: sessions[group.folder] },
+          'Session file missing — clearing stale session ID for fresh start',
+        );
+        delete sessions[group.folder];
+        deleteSession(group.folder);
+      }
       logger.error(
         { group: group.name, error: output.error },
         'Container agent error',

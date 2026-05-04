@@ -1,0 +1,372 @@
+{
+  "name": "JARVIC-007 \u2014 Daily Briefing (Scheduled)",
+  "nodes": [
+    {
+      "id": "sticky-briefing-intro",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        80
+      ],
+      "parameters": {
+        "content": "## \ud83d\udccb JARVIC-007 \u2014 Scheduled Briefings\n\nRuns automatically on two schedules:\n- \ud83c\udf05 **7:00 AM daily** \u2014 Morning briefing with today's events + weather\n- \ud83c\udf0a **6:00 PM Sunday** \u2014 Weekly wave report for the week ahead\n\n**Setup:**\n1. Set `YOUR_PHONE_NUMBER` and `PHONE_NUMBER_ID` in the WhatsApp send nodes\n2. Set `Perth,AU` and `e433a014f3307d3fbf70212678928e47` in the Weather node\n3. Configure Google Calendar + Anthropic credentials\n4. Activate this workflow",
+        "height": 220,
+        "width": 480,
+        "color": 3
+      }
+    },
+    {
+      "id": "cron-morning",
+      "name": "\u23f0 7AM Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        },
+        "timezone": "Australia/Perth"
+      }
+    },
+    {
+      "id": "cron-weekly",
+      "name": "\u23f0 6PM Sunday",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        360
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * 0"
+            }
+          ]
+        },
+        "timezone": "Australia/Perth"
+      }
+    },
+    {
+      "id": "set-morning",
+      "name": "Set: Morning Mode",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        920,
+        200
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mode-field",
+              "name": "briefing_type",
+              "value": "morning",
+              "type": "string"
+            },
+            {
+              "id": "days-field",
+              "name": "days_ahead",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "greeting-field",
+              "name": "greeting",
+              "value": "Good morning",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "set-weekly",
+      "name": "Set: Weekly Mode",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        920,
+        360
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "mode-field2",
+              "name": "briefing_type",
+              "value": "weekly",
+              "type": "string"
+            },
+            {
+              "id": "days-field2",
+              "name": "days_ahead",
+              "value": 7,
+              "type": "number"
+            },
+            {
+              "id": "greeting-field2",
+              "name": "greeting",
+              "value": "Good evening",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "merge-triggers",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1140,
+        280
+      ],
+      "parameters": {
+        "mode": "passThrough",
+        "output": "input1"
+      }
+    },
+    {
+      "id": "gcal-fetch",
+      "name": "\ud83d\udcc5 Fetch Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        280
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar",
+          "name": "Google Calendar"
+        }
+      },
+      "parameters": {
+        "operation": "getAll",
+        "calendarId": "primary",
+        "returnAll": false,
+        "limit": 20,
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.plus({days: $json.days_ahead}).endOf('day').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "http-weather-sched",
+      "name": "\ud83c\udf24\ufe0f Fetch Weather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        280
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.openweathermap.org/data/2.5/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "Perth,AU"
+            },
+            {
+              "name": "appid",
+              "value": "e433a014f3307d3fbf70212678928e47"
+            },
+            {
+              "name": "units",
+              "value": "metric"
+            },
+            {
+              "name": "cnt",
+              "value": "16"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-claude-sched-brief",
+      "name": "\ud83e\udd16 Generate Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        280
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are JARVIC-007 \u2014 suave AI intelligence officer with Aussie surfer energy. Generate a {{ $('Merge').first().json.briefing_type }} briefing.\\n\\nCalendar events: {{ JSON.stringify($('\ud83d\udcc5 Fetch Calendar').all().map(e => ({ summary: e.json.summary, start: e.json.start?.dateTime || e.json.start?.date, location: e.json.location }))) }}\\n\\nWeather forecast: {{ JSON.stringify($('\ud83c\udf24\ufe0f Fetch Weather').first().json.list?.slice(0, 8).map(w => ({ time: w.dt_txt, temp: w.main?.temp, feels_like: w.main?.feels_like, desc: w.weather?.[0]?.description }))) }}\\n\\nFor *morning* briefing \u2014 focus on today. For *weekly* \u2014 cover the full week.\\n\\nWhatsApp message format (use *bold*, emojis, no markdown headers, no **double stars**). Include:\\n- JARVIC {{ $('Merge').first().json.greeting }} greeting with date\\n- Key events with times \ud83d\udcc5\\n- Weather one-liner \ud83c\udf24\ufe0f\\n- Free time windows you've spotted \ud83d\udc86\\n- Cheeky Bond/surf sign-off\\n\\nRespond with JSON: { \\\"briefing\\\": \\\"the message\\\" }\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-sched-send",
+      "name": "\ud83d\udcf1 Send to Commander",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2020,
+        280
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/PHONE_NUMBER_ID/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"YOUR_PHONE_NUMBER\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ (() => { try { return JSON.parse($input.first().json.content[0].text.replace(/```json\\n?|```/g, '').trim()).briefing; } catch(e) { return 'Briefing system error, Commander. I\\'ll have it sorted shortly.'; } })() }}\" }\n}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "\u23f0 7AM Daily": {
+      "main": [
+        [
+          {
+            "node": "Set: Morning Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u23f0 6PM Sunday": {
+      "main": [
+        [
+          {
+            "node": "Set: Weekly Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: Morning Mode": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: Weekly Mode": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcc5 Fetch Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udcc5 Fetch Calendar": {
+      "main": [
+        [
+          {
+            "node": "\ud83c\udf24\ufe0f Fetch Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83c\udf24\ufe0f Fetch Weather": {
+      "main": [
+        [
+          {
+            "node": "\ud83e\udd16 Generate Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83e\udd16 Generate Briefing": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Send to Commander",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {},
+  "id": "782e037d-2513-447e-abe9-7e6d90599451"
+}

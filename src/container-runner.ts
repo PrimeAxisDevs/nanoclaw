@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -32,6 +32,38 @@ import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
+
+/**
+ * Returns the OneCLI container's IP on its Docker network, or null if
+ * OneCLI is not running in Docker (e.g. bare-metal or unreachable).
+ * Used to connect nanoclaw containers to the same network so they can
+ * reach the HTTPS proxy at host.docker.internal:10255.
+ */
+function getOnecliDockerNetworkInfo(): {
+  network: string;
+  ip: string;
+} | null {
+  try {
+    const out = execFileSync(
+      'docker',
+      [
+        'inspect',
+        'onecli-app-1',
+        '--format',
+        '{{range $name,$net := .NetworkSettings.Networks}}{{$name}} {{$net.IPAddress}}{{end}}',
+      ],
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 },
+    ).trim();
+    // Parse "onecli_onecli 172.18.0.2"
+    const match = out.match(/^(\S+)\s+([\d.]+)$/);
+    if (match) {
+      return { network: match[1], ip: match[2] };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -273,8 +305,24 @@ async function buildContainerArgs(
     );
   }
 
-  // Runtime-specific args for host gateway resolution
-  args.push(...hostGatewayArgs());
+  // Network routing: if OneCLI runs in Docker, join its network so containers
+  // can reach the HTTPS proxy at host.docker.internal:10255.
+  // On bare-metal OneCLI installs (or when inspection fails), fall back to
+  // the normal host-gateway mapping.
+  const onecliNet = getOnecliDockerNetworkInfo();
+  if (onecliNet) {
+    args.push('--network', onecliNet.network);
+    // Override host.docker.internal to point at the OneCLI container's IP
+    // so the injected HTTPS_PROXY URL resolves correctly inside the container.
+    args.push(`--add-host=host.docker.internal:${onecliNet.ip}`);
+    logger.debug(
+      { network: onecliNet.network, onecliIp: onecliNet.ip },
+      'Container joined OneCLI Docker network',
+    );
+  } else {
+    // Runtime-specific args for host gateway resolution
+    args.push(...hostGatewayArgs());
+  }
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),

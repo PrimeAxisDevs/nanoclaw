@@ -1,0 +1,1180 @@
+{
+  "name": "CLAW \ud83e\udd80 \u2014 Intelligence Core",
+  "nodes": [
+    {
+      "id": "sticky-intro",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        80
+      ],
+      "parameters": {
+        "content": "## \ud83d\udd76\ufe0f CLAW \ud83e\udd80 \u2014 Intelligence Core\n\n**Setup checklist:**\n1. Set `YOUR_PHONE_NUMBER` in the Identity Check node (international format, no +)\n2. Add `Anthropic API` credential (HTTP Header Auth, name: `x-api-key`)\n3. Add `WhatsApp Business Cloud` credential (Bearer token from Meta)\n4. Add `Google Calendar OAuth2` credential\n5. Set your `PHONE_NUMBER_ID` from Meta Business in the WhatsApp send nodes\n6. Set your `CALENDAR_ID` in the Google Calendar nodes\n7. Activate the workflow\n\n**Webhook URL:** copy from the WhatsApp Incoming node \u2192 use in Meta App Dashboard \u2192 Webhooks",
+        "height": 280,
+        "width": 480,
+        "color": 7
+      }
+    },
+    {
+      "id": "wh1",
+      "name": "\ud83d\udcf1 WhatsApp Incoming",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ],
+      "webhookId": "jarvis-007",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis-007",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-extract",
+      "name": "\ud83d\udd0d Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\n// Handle Meta webhook verification challenge\nif (body['hub.challenge']) {\n  return [{ json: { challenge: body['hub.challenge'], isVerification: true } }];\n}\n\nconst entry = body?.entry?.[0];\nconst change = entry?.changes?.[0];\nconst value = change?.value;\nconst message = value?.messages?.[0];\n\nif (!message) return []; // Not a message, skip\n\nconst text = message.text?.body\n  || message.interactive?.button_reply?.title\n  || message.interactive?.list_reply?.title\n  || '';\n\nif (!text) return []; // No text content\n\nreturn [{\n  json: {\n    messageId: message.id,\n    from: message.from,\n    text: text.trim(),\n    timestamp: message.timestamp,\n    phoneNumberId: value?.metadata?.phone_number_id || 'PHONE_NUMBER_ID',\n    senderName: value?.contacts?.[0]?.profile?.name || 'Commander',\n    isVerification: false\n  }\n}];"
+      }
+    },
+    {
+      "id": "if-identity",
+      "name": "\ud83d\udee1\ufe0f Mate Identity Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "id-cond",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "YOUR_PHONE_NUMBER",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-claude-brain",
+      "name": "\ud83e\udd16 CLAW Brain (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are CLAW \ud83e\udd80 \u2014 a suave, razor-sharp AI intelligence officer and personal butler hybrid. Think Jarvis from Iron Man meets Q from James Bond. You live in WhatsApp as your mate's right hand.\\n\\nAnalyze this incoming transmission from your mate and extract:\\n1. MISSION_TYPE: schedule | reschedule | cancel | message_someone | find_service | briefing | unclear\\n2. INTEL: {\\n     \\\"personnel\\\": [],\\n     \\\"date_preference\\\": \\\"\\\",\\n     \\\"time_preference\\\": \\\"\\\",\\n     \\\"duration\\\": \\\"\\\",\\n     \\\"location\\\": \\\"\\\",\\n     \\\"budget\\\": \\\"\\\",\\n     \\\"special_notes\\\": \\\"\\\",\\n     \\\"priority_level\\\": \\\"routine\\\"\\n   }\\n3. CLAW_RESPONSE: A short, sophisticated acknowledgment in character (dry British wit, calm competence, subtle Bond references). Max 2 sentences.\\n\\nIncoming Transmission: \\\"{{ $json.text }}\\\"\\n\\nRespond in JSON only. No markdown, no code blocks, raw JSON.\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-unauthorized",
+      "name": "\ud83d\udeab Ignore Unauthorized",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        420
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "code-parse",
+      "name": "\ud83d\udccb Parse Intel Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst raw = response.content?.[0]?.text || '{}';\n\nlet parsed;\ntry {\n  const clean = raw.replace(/```json\\n?|```/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch(e) {\n  parsed = {\n    MISSION_TYPE: 'unclear',\n    INTEL: {},\n    CLAW_RESPONSE: \"I beg your pardon, Commander. Could you rephrase that mission brief? I want to make sure I execute it flawlessly.\"\n  };\n}\n\nconst extract = $('\ud83d\udd0d Extract Message').first().json;\n\nreturn [{\n  json: {\n    MISSION_TYPE: (parsed.MISSION_TYPE || 'unclear').toLowerCase(),\n    INTEL: parsed.INTEL || {},\n    CLAW_RESPONSE: parsed.CLAW_RESPONSE || '',\n    from: extract.from,\n    phoneNumberId: extract.phoneNumberId,\n    senderName: extract.senderName,\n    originalText: extract.text\n  }\n}];"
+      }
+    },
+    {
+      "id": "switch-router",
+      "name": "\ud83d\udd00 Mission Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1800,
+        200
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.MISSION_TYPE }}",
+                    "rightValue": "schedule",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "SCHEDULE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.MISSION_TYPE }}",
+                    "rightValue": "reschedule",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "RESCHEDULE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.MISSION_TYPE }}",
+                    "rightValue": "message_someone",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "MESSAGE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.MISSION_TYPE }}",
+                    "rightValue": "find_service",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "FIND"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.MISSION_TYPE }}",
+                    "rightValue": "briefing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "BRIEFING"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "sticky-schedule",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2020,
+        0
+      ],
+      "parameters": {
+        "content": "### \ud83d\udcc5 OPERATION: SCHEDULE\nChecks calendar for conflicts \u2192 creates event \u2192 confirms to Commander",
+        "height": 80,
+        "width": 700,
+        "color": 5
+      }
+    },
+    {
+      "id": "gcal-read-schedule",
+      "name": "\ud83d\udcc5 Check Calendar Conflicts",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        2040,
+        100
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar",
+          "name": "Google Calendar"
+        }
+      },
+      "parameters": {
+        "operation": "getAll",
+        "calendarId": "primary",
+        "returnAll": false,
+        "limit": 10,
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.plus({days: 7}).endOf('day').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "http-claude-schedule",
+      "name": "\ud83e\udd16 Find Best Slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are CLAW \ud83e\udd80. The mate wants to schedule: {{ $('\ud83d\udccb Parse Intel Brief').first().json.INTEL.special_notes || $('\ud83d\udccb Parse Intel Brief').first().json.originalText }}\\n\\nIntel extracted: {{ JSON.stringify($('\ud83d\udccb Parse Intel Brief').first().json.INTEL) }}\\n\\nExisting calendar events this week: {{ JSON.stringify($input.all().map(e => ({ summary: e.json.summary, start: e.json.start, end: e.json.end }))) }}\\n\\nProvide a JSON response with:\\n- event_title: string\\n- start_datetime: ISO8601\\n- end_datetime: ISO8601\\n- location: string or null\\n- attendees: array of email strings\\n- description: string\\n- claw_response: A suave confirmation message for WhatsApp (use casual Aussie surf/Bond style)\\n\\nRaw JSON only, no markdown.\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-parse-schedule",
+      "name": "Parse Event Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst raw = response.content?.[0]?.text || '{}';\nlet parsed;\ntry {\n  parsed = JSON.parse(raw.replace(/```json\\n?|```/g, '').trim());\n} catch(e) {\n  parsed = { jarvis_confirmation: 'Apologies Commander, I need more details to schedule this properly.', event_title: null };\n}\nreturn [{ json: { ...parsed, from: $('\ud83d\udccb Parse Intel Brief').first().json.from, phoneNumberId: $('\ud83d\udccb Parse Intel Brief').first().json.phoneNumberId } }];"
+      }
+    },
+    {
+      "id": "gcal-create",
+      "name": "\ud83d\udcc5 Deploy Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        2700,
+        100
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar",
+          "name": "Google Calendar"
+        }
+      },
+      "parameters": {
+        "operation": "create",
+        "calendarId": "primary",
+        "start": "={{ $json.start_datetime }}",
+        "end": "={{ $json.end_datetime }}",
+        "additionalFields": {
+          "summary": "={{ $json.event_title }}",
+          "location": "={{ $json.location }}",
+          "description": "={{ $json.description }}"
+        }
+      }
+    },
+    {
+      "id": "http-wa-schedule-reply",
+      "name": "\ud83d\udcf1 Confirm Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2920,
+        100
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('Parse Event Details').first().json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Parse Event Details').first().json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $('Parse Event Details').first().json.jarvis_confirmation }}\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-message",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2020,
+        280
+      ],
+      "parameters": {
+        "content": "### \ud83d\udce8 OPERATION: MESSAGE\nDrafts message \u2192 previews to Commander \u2192 waits for confirmation \u2192 sends",
+        "height": 80,
+        "width": 700,
+        "color": 6
+      }
+    },
+    {
+      "id": "http-claude-draft",
+      "name": "\u270d\ufe0f Draft Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        380
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are CLAW \ud83e\udd80. Draft a message on behalf of your mate.\\n\\nRequest: {{ $('\ud83d\udccb Parse Intel Brief').first().json.originalText }}\\nIntel: {{ JSON.stringify($('\ud83d\udccb Parse Intel Brief').first().json.INTEL) }}\\n\\nWrite a natural, warm message from the mate to {{ $('\ud83d\udccb Parse Intel Brief').first().json.INTEL.personnel[0] || 'the recipient' }}.\\n\\nRespond with JSON only:\\n{\\n  \\\"recipient_name\\\": \\\"\\\",\\n  \\\"draft\\\": \\\"the message text\\\",\\n  \\\"preview_message\\\": \\\"CLAW preview intro (e.g. 'Here's what I'd send Sarah, mate...')\\\",\\n  \\\"send_method\\\": \\\"whatsapp or email\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-parse-draft",
+      "name": "Parse Draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        380
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst raw = response.content?.[0]?.text || '{}';\nlet parsed;\ntry {\n  parsed = JSON.parse(raw.replace(/```json\\n?|```/g, '').trim());\n} catch(e) {\n  parsed = { preview_message: 'Could not draft message.', draft: '' };\n}\nreturn [{ json: { ...parsed, from: $('\ud83d\udccb Parse Intel Brief').first().json.from, phoneNumberId: $('\ud83d\udccb Parse Intel Brief').first().json.phoneNumberId } }];"
+      }
+    },
+    {
+      "id": "http-wa-preview",
+      "name": "\ud83d\udcf1 Preview to Commander",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        380
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.preview_message }}\\n\\n---\\n{{ $json.draft }}\\n---\\n\\nSend it? Reply *yes* to send or *edit* to revise. \ud83d\udd76\ufe0f\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "wait-confirm",
+      "name": "\u23f3 Wait for Confirmation",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2700,
+        380
+      ],
+      "webhookId": "jarvis-confirm",
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      }
+    },
+    {
+      "id": "if-confirm",
+      "name": "Confirmed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2920,
+        380
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "confirm-cond",
+              "leftValue": "={{ $json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body?.toLowerCase() }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "contains",
+                "name": "filter.operator.contains"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-wa-sent",
+      "name": "\ud83d\udcf1 Confirm Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3140,
+        340
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('Parse Draft').first().json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Parse Draft').first().json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"Message dispatched, Commander. \ud83d\udd76\ufe0f Consider it handled. \ud83c\udf0a\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-cancelled",
+      "name": "\ud83d\udcf1 Cancelled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3140,
+        440
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('Parse Draft').first().json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Parse Draft').first().json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"Standing down, Commander. Message shelved. Just say the word when you're ready to proceed. \ud83d\udd76\ufe0f\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-find",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2020,
+        560
+      ],
+      "parameters": {
+        "content": "### \ud83d\udd0d OPERATION: FIND / BOOK\nSearch the web \u2192 rank top 3 options \u2192 present to Commander \u2192 wait for choice",
+        "height": 80,
+        "width": 700,
+        "color": 4
+      }
+    },
+    {
+      "id": "http-search",
+      "name": "\ud83c\udf10 Recon: Search Services",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        660
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://serpapi.com/search.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('\ud83d\udccb Parse Intel Brief').first().json.INTEL.special_notes }} {{ $('\ud83d\udccb Parse Intel Brief').first().json.INTEL.location }}"
+            },
+            {
+              "name": "api_key",
+              "value": "YOUR_SERPAPI_KEY"
+            },
+            {
+              "name": "num",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-claude-rank",
+      "name": "\ud83e\udd16 Rank Options",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        660
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are CLAW \ud83e\udd80. The mate wants: {{ $('\ud83d\udccb Parse Intel Brief').first().json.originalText }}\\n\\nSearch results: {{ JSON.stringify($input.first().json.organic_results?.slice(0, 5) || []) }}\\n\\nPick the top 3 options and format a WhatsApp message for mate with:\\n- Numbered list (1, 2, 3)\\n- Name, price estimate, rating, distance/location\\n- Emojis\\n- End with: 'Pick a number and I'll lock it in, mate \ud83d\udd76\ufe0f'\\n\\nRespond with JSON:\\n{ \\\"options_message\\\": \\\"the formatted WhatsApp text\\\" }\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-options",
+      "name": "\ud83d\udcf1 Present Options",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        660
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('\ud83d\udccb Parse Intel Brief').first().json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('\ud83d\udccb Parse Intel Brief').first().json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $input.first().json.content?.[0]?.text ? JSON.parse($input.first().json.content[0].text.replace(/```json\\n?|```/g, '').trim()).options_message : 'Found some options, Commander!' }}\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-briefing",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2020,
+        840
+      ],
+      "parameters": {
+        "content": "### \ud83d\udccb OPERATION: BRIEFING\nFetch calendar + weather \u2192 Claude generates personality-driven summary \u2192 send to Commander\n\n_This branch also runs on schedule via the Daily Briefing workflow_",
+        "height": 100,
+        "width": 700,
+        "color": 3
+      }
+    },
+    {
+      "id": "gcal-briefing",
+      "name": "\ud83d\udcc5 Fetch Calendar Intel",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        2040,
+        960
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar",
+          "name": "Google Calendar"
+        }
+      },
+      "parameters": {
+        "operation": "getAll",
+        "calendarId": "primary",
+        "returnAll": false,
+        "limit": 20,
+        "options": {
+          "timeMin": "={{ $now.startOf('day').toISO() }}",
+          "timeMax": "={{ $now.plus({days: 7}).endOf('day').toISO() }}"
+        }
+      }
+    },
+    {
+      "id": "http-weather",
+      "name": "\ud83c\udf24\ufe0f Weather Intel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        1100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.openweathermap.org/data/2.5/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "YOUR_CITY"
+            },
+            {
+              "name": "appid",
+              "value": "YOUR_OPENWEATHER_API_KEY"
+            },
+            {
+              "name": "units",
+              "value": "metric"
+            },
+            {
+              "name": "cnt",
+              "value": "8"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-claude-briefing",
+      "name": "\ud83e\udd16 Generate Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        1020
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API Key"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-opus-4-5\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are CLAW \ud83e\udd80 \u2014 Aussie AI surf genie. Generate a morning briefing for the mate.\\n\\nCalendar events this week: {{ JSON.stringify($('\ud83d\udcc5 Fetch Calendar Intel').all().map(e => ({ summary: e.json.summary, start: e.json.start?.dateTime || e.json.start?.date, location: e.json.location })).slice(0, 10)) }}\\n\\nWeather data: {{ JSON.stringify($('\ud83c\udf24\ufe0f Weather Intel').first().json.list?.slice(0, 4).map(w => ({ time: w.dt_txt, temp: w.main?.temp, desc: w.weather?.[0]?.description }))) }}\\n\\nWrite a WhatsApp briefing message (max 400 chars for readability) with:\\n- Greeting + date\\n- Today's top 3 events with times\\n- Weather one-liner\\n- Any free windows (great for beach/gym/rest)\\n- CLAW sign-off with personality\\n\\nUse WhatsApp formatting: *bold* for emphasis, no markdown headers, emoji generously.\\n\\nRespond with JSON: { \\\"briefing\\\": \\\"the WhatsApp message text\\\" }\"\n    }\n  ]\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-briefing",
+      "name": "\ud83d\udcf1 Transmit Briefing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        1020
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/PHONE_NUMBER_ID/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"YOUR_PHONE_NUMBER\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ (() => { try { return JSON.parse($input.first().json.content[0].text.replace(/```json\\n?|```/g, '').trim()).briefing; } catch(e) { return $input.first().json.content?.[0]?.text || 'Briefing generation failed, Commander.'; } })() }}\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-unclear",
+      "name": "\ud83d\udcf1 Request Clarification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        1240
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('\ud83d\udccb Parse Intel Brief').first().json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('\ud83d\udccb Parse Intel Brief').first().json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $('\ud83d\udccb Parse Intel Brief').first().json.CLAW_RESPONSE || 'Could you elaborate on that mission brief, mate? I want to execute it flawlessly. \ud83d\udd76\ufe0f' }}\" }\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-wa-jarvis-ack",
+      "name": "\ud83d\udcf1 CLAW Acknowledgment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        420
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "whatsapp-token",
+          "name": "WhatsApp Business Token"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.phoneNumberId }}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.CLAW_RESPONSE }} _(Processing your request...)_\" }\n}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "\ud83d\udcf1 WhatsApp Incoming": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udd0d Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udd0d Extract Message": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udee1\ufe0f Commander Identity Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udee1\ufe0f Commander Identity Check": {
+      "main": [
+        [
+          {
+            "node": "\ud83e\udd16 JARVIC Brain (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83d\udeab Ignore Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83e\udd16 JARVIC Brain (Claude)": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udccb Parse Intel Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udccb Parse Intel Brief": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udd00 Mission Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udd00 Mission Router": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcc5 Check Calendar Conflicts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83d\udcc5 Check Calendar Conflicts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u270d\ufe0f Draft Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83c\udf10 Recon: Search Services",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83d\udcc5 Fetch Calendar Intel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83d\udcf1 Request Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udcc5 Check Calendar Conflicts": {
+      "main": [
+        [
+          {
+            "node": "\ud83e\udd16 Find Best Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83e\udd16 Find Best Slot": {
+      "main": [
+        [
+          {
+            "node": "Parse Event Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Event Details": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcc5 Deploy Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udcc5 Deploy Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Confirm Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u270d\ufe0f Draft Message": {
+      "main": [
+        [
+          {
+            "node": "Parse Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Draft": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Preview to Commander",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udcf1 Preview to Commander": {
+      "main": [
+        [
+          {
+            "node": "\u23f3 Wait for Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u23f3 Wait for Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Confirmed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmed?": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Confirm Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\ud83d\udcf1 Cancelled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83c\udf10 Recon: Search Services": {
+      "main": [
+        [
+          {
+            "node": "\ud83e\udd16 Rank Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83e\udd16 Rank Options": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Present Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83d\udcc5 Fetch Calendar Intel": {
+      "main": [
+        [
+          {
+            "node": "\ud83c\udf24\ufe0f Weather Intel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83c\udf24\ufe0f Weather Intel": {
+      "main": [
+        [
+          {
+            "node": "\ud83e\udd16 Generate Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\ud83e\udd16 Generate Briefing": {
+      "main": [
+        [
+          {
+            "node": "\ud83d\udcf1 Transmit Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {},
+  "id": "e4701427-a0ba-4651-8600-3d0935f2f7ca"
+}

@@ -54,9 +54,12 @@ export class TelegramChannel implements Channel {
   }
 
   async connect(): Promise<void> {
+    // Force IPv4 — this server's IPv6 route to Telegram times out; node-fetch
+    // uses https.Agent so family:4 ensures only IPv4 addresses are tried.
+    const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
     this.bot = new Bot(this.botToken, {
       client: {
-        baseFetchConfig: { agent: https.globalAgent, compress: true },
+        baseFetchConfig: { agent: ipv4Agent, compress: true },
       },
     });
 

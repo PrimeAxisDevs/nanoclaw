@@ -8,6 +8,7 @@ import {
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestWaWebVersion,
+  jidEncode,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
   useMultiFileAuthState,
@@ -78,6 +79,8 @@ export class WhatsAppChannel implements Channel {
   private botLidUser?: string;
   /** Resolve the initial connect() once the first successful open happens. */
   private pendingFirstOpen?: () => void;
+  /** Groups whose @lid participant sessions have been pre-fetched. */
+  private readonly ensuredGroupSessions = new Set<string>();
 
   private opts: WhatsAppChannelOpts;
 
@@ -296,7 +299,11 @@ export class WhatsAppChannel implements Channel {
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                 const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
                 const caption = normalized?.imageMessage?.caption ?? '';
-                const result = await processImage(buffer as Buffer, groupDir, caption);
+                const result = await processImage(
+                  buffer as Buffer,
+                  groupDir,
+                  caption,
+                );
                 if (result) {
                   content = result.content;
                 }
@@ -462,6 +469,7 @@ export class WhatsAppChannel implements Channel {
   }
 
   private scheduleReconnect(attempt: number): void {
+    this.ensuredGroupSessions.clear();
     const delayMs = Math.min(5000 * Math.pow(2, attempt - 1), 300000);
     logger.info({ attempt, delayMs }, 'Reconnecting...');
     setTimeout(() => {
@@ -537,6 +545,68 @@ export class WhatsAppChannel implements Channel {
       expiresAt: Date.now() + 60_000,
     });
     return metadata;
+  }
+
+  /**
+   * Pre-fetch Signal sessions for @lid group participants before sending.
+   *
+   * Baileys hardcodes @s.whatsapp.net for participant session JIDs in groups
+   * (isLid is based on the group JID, which is @g.us, not the participant JID).
+   * So Baileys' internal assertSessions call uses @s.whatsapp.net — which WA's
+   * encrypt endpoint doesn't recognise for LID users → no prekeys → participant skipped.
+   *
+   * Fix: pre-fetch sessions using the correct @lid device JIDs. Signal sessions
+   * are keyed by the numeric user.device (not the @server suffix), so the session
+   * stored under "12345.0@lid" is found when Baileys later checks "12345.0@s.whatsapp.net".
+   * Using force=false ensures we only fetch missing sessions, never reset existing ones.
+   */
+  private async ensureGroupSessions(jid: string): Promise<void> {
+    if (this.ensuredGroupSessions.has(jid)) return;
+    try {
+      const metadata = await this.sock.groupMetadata(jid);
+      const lidParticipants = metadata.participants
+        .map((p) => p.id)
+        .filter((id) => id.endsWith('@lid'));
+
+      if (lidParticipants.length > 0) {
+        const devices = await this.sock.getUSyncDevices(
+          lidParticipants,
+          false,
+          false,
+        );
+        // Extract bot's own LID user and device to exclude from pre-fetch.
+        // Establishing a Signal session with our own device confuses the sender
+        // key distribution — Baileys may try to distribute to itself, producing
+        // an invalid self-referential session and blocking message delivery.
+        const botLidParts = this.sock.user?.lid?.split(':');
+        const botLidUser = botLidParts?.[0];
+        const botLidDevice = botLidParts ? parseInt(botLidParts[1]?.split('@')[0] ?? '0', 10) : -1;
+
+        const deviceJids = devices
+          .filter(({ user, device }) => {
+            // Skip bot's own LID device
+            if (botLidUser && user === botLidUser && (device ?? 0) === botLidDevice) {
+              return false;
+            }
+            return true;
+          })
+          .map(({ user, device }) => jidEncode(user, 'lid', device || 0));
+
+        if (deviceJids.length > 0) {
+          logger.info(
+            { jid, deviceCount: deviceJids.length },
+            'Pre-fetching Signal sessions for LID participant devices',
+          );
+          // force=false: only fetch sessions that don't already exist.
+          // force=true would reset existing sessions and cause Bad MAC errors.
+          await this.sock.assertSessions(deviceJids, false);
+        }
+      }
+
+      this.ensuredGroupSessions.add(jid);
+    } catch (err) {
+      logger.warn({ err, jid }, 'Failed to pre-fetch group sessions');
+    }
   }
 
   private async flushOutgoingQueue(): Promise<void> {
