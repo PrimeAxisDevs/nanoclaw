@@ -257,6 +257,15 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Power monitor output — mounted read-only when the service is running
+  if (fs.existsSync('/run/power-monitor')) {
+    mounts.push({
+      hostPath: '/run/power-monitor',
+      containerPath: '/run/power-monitor',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
