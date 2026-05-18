@@ -194,6 +194,14 @@ async function cmdCreate(args) {
   };
   if (args.desc) body.description = args.desc;
   if (args.location) body.location = args.location;
+  // --reminder <minutes> (0 = at time of event); multiple flags allowed
+  const reminderMins = [args.reminder].flat().filter(v => v !== undefined).map(Number);
+  if (reminderMins.length > 0) {
+    body.reminders = {
+      useDefault: false,
+      overrides: reminderMins.map(m => ({ method: 'popup', minutes: m })),
+    };
+  }
   const e = await calFetch('POST', `/calendars/${encodeURIComponent(calId)}/events`, body);
   console.log('Event created:');
   console.log(fmtEvent(e));
@@ -216,6 +224,13 @@ async function cmdUpdate(args) {
   if (args.end) {
     const isAllDay = /^\d{4}-\d{2}-\d{2}$/.test(args.end);
     body.end = isAllDay ? { date: args.end } : { dateTime: args.end, timeZone: process.env.TZ || 'UTC' };
+  }
+  const reminderMins = [args.reminder].flat().filter(v => v !== undefined).map(Number);
+  if (reminderMins.length > 0) {
+    body.reminders = {
+      useDefault: false,
+      overrides: reminderMins.map(m => ({ method: 'popup', minutes: m })),
+    };
   }
   const e = await calFetch('PUT', `/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(eventId)}`, body);
   console.log('Event updated:');
