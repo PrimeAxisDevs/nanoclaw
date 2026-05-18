@@ -710,49 +710,96 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
 
 // --- Trade journal ---
 
-export function createTrade(trade: Omit<Trade, 'exit_price' | 'exit_time' | 'duration_minutes' | 'pnl_pips' | 'pnl_usd' | 'outcome'>): void {
-  db.prepare(`
+export function createTrade(
+  trade: Omit<
+    Trade,
+    | 'exit_price'
+    | 'exit_time'
+    | 'duration_minutes'
+    | 'pnl_pips'
+    | 'pnl_usd'
+    | 'outcome'
+  >,
+): void {
+  db.prepare(
+    `
     INSERT INTO trades (id, symbol, direction, entry_price, stop_loss, take_profit,
                         lot_size, entry_time, status, signal_source, session, notes, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    trade.id, trade.symbol, trade.direction, trade.entry_price,
-    trade.stop_loss, trade.take_profit ?? null, trade.lot_size,
-    trade.entry_time, trade.status, trade.signal_source,
-    trade.session ?? null, trade.notes ?? null, trade.created_at,
+  `,
+  ).run(
+    trade.id,
+    trade.symbol,
+    trade.direction,
+    trade.entry_price,
+    trade.stop_loss,
+    trade.take_profit ?? null,
+    trade.lot_size,
+    trade.entry_time,
+    trade.status,
+    trade.signal_source,
+    trade.session ?? null,
+    trade.notes ?? null,
+    trade.created_at,
   );
 }
 
-export function closeTrade(id: string, updates: {
-  exit_price: number;
-  exit_time: string;
-  duration_minutes: number;
-  pnl_pips: number;
-  pnl_usd: number;
-  outcome: 'win' | 'loss' | 'break_even';
-}): void {
-  db.prepare(`
+export function closeTrade(
+  id: string,
+  updates: {
+    exit_price: number;
+    exit_time: string;
+    duration_minutes: number;
+    pnl_pips: number;
+    pnl_usd: number;
+    outcome: 'win' | 'loss' | 'break_even';
+  },
+): void {
+  db.prepare(
+    `
     UPDATE trades SET exit_price = ?, exit_time = ?, duration_minutes = ?,
                       pnl_pips = ?, pnl_usd = ?, outcome = ?, status = 'closed'
     WHERE id = ? AND status = 'open'
-  `).run(
-    updates.exit_price, updates.exit_time, updates.duration_minutes,
-    updates.pnl_pips, updates.pnl_usd, updates.outcome, id,
+  `,
+  ).run(
+    updates.exit_price,
+    updates.exit_time,
+    updates.duration_minutes,
+    updates.pnl_pips,
+    updates.pnl_usd,
+    updates.outcome,
+    id,
   );
 }
 
 export function getOpenTrades(symbol?: string): Trade[] {
   if (symbol) {
-    return db.prepare(`SELECT * FROM trades WHERE status = 'open' AND symbol = ? ORDER BY entry_time DESC`).all(symbol) as Trade[];
+    return db
+      .prepare(
+        `SELECT * FROM trades WHERE status = 'open' AND symbol = ? ORDER BY entry_time DESC`,
+      )
+      .all(symbol) as Trade[];
   }
-  return db.prepare(`SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC`).all() as Trade[];
+  return db
+    .prepare(
+      `SELECT * FROM trades WHERE status = 'open' ORDER BY entry_time DESC`,
+    )
+    .all() as Trade[];
 }
 
 export function getClosedTrades(symbol?: string, limit = 50): Trade[] {
   if (symbol) {
-    return db.prepare(`SELECT * FROM trades WHERE status = 'closed' AND symbol = ? ORDER BY exit_time DESC LIMIT ?`).all(symbol, limit) as Trade[];
+    return db
+      .prepare(
+        `SELECT * FROM trades WHERE status = 'closed' AND symbol = ? ORDER BY exit_time DESC LIMIT ?`,
+      )
+      .all(symbol, limit) as Trade[];
   }
-  return db.prepare(`SELECT * FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT ?`).all(limit) as Trade[];
+  return db
+    .prepare(
+      `SELECT * FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT ?`,
+    )
+    .all(limit) as Trade[];
 }
 
 export interface TradeStats {
@@ -768,27 +815,50 @@ export interface TradeStats {
 }
 
 export function getTradeStats(symbol = 'XAUUSD'): TradeStats {
-  const closed = db.prepare(
-    `SELECT outcome, pnl_pips FROM trades WHERE status = 'closed' AND symbol = ?`
-  ).all(symbol) as Array<{ outcome: string; pnl_pips: number | null }>;
+  const closed = db
+    .prepare(
+      `SELECT outcome, pnl_pips FROM trades WHERE status = 'closed' AND symbol = ?`,
+    )
+    .all(symbol) as Array<{ outcome: string; pnl_pips: number | null }>;
 
   const total = closed.length;
-  const wins = closed.filter(t => t.outcome === 'win').length;
-  const losses = closed.filter(t => t.outcome === 'loss').length;
+  const wins = closed.filter((t) => t.outcome === 'win').length;
+  const losses = closed.filter((t) => t.outcome === 'loss').length;
   const breakEven = total - wins - losses;
   const winRate = total > 0 ? Math.round((wins / total) * 1000) / 10 : 0;
 
-  const pnls = closed.map(t => t.pnl_pips ?? 0);
+  const pnls = closed.map((t) => t.pnl_pips ?? 0);
   const totalPnlPips = Math.round(pnls.reduce((a, b) => a + b, 0) * 100) / 100;
-  const winPnls = pnls.filter(p => p > 0);
-  const lossPnls = pnls.filter(p => p < 0);
-  const avgWinPips = winPnls.length > 0 ? Math.round((winPnls.reduce((a, b) => a + b, 0) / winPnls.length) * 100) / 100 : 0;
-  const avgLossPips = lossPnls.length > 0 ? Math.round((lossPnls.reduce((a, b) => a + b, 0) / lossPnls.length) * 100) / 100 : 0;
+  const winPnls = pnls.filter((p) => p > 0);
+  const lossPnls = pnls.filter((p) => p < 0);
+  const avgWinPips =
+    winPnls.length > 0
+      ? Math.round(
+          (winPnls.reduce((a, b) => a + b, 0) / winPnls.length) * 100,
+        ) / 100
+      : 0;
+  const avgLossPips =
+    lossPnls.length > 0
+      ? Math.round(
+          (lossPnls.reduce((a, b) => a + b, 0) / lossPnls.length) * 100,
+        ) / 100
+      : 0;
   const grossWin = winPnls.reduce((a, b) => a + b, 0);
   const grossLoss = Math.abs(lossPnls.reduce((a, b) => a + b, 0));
-  const profitFactor = grossLoss > 0 ? Math.round((grossWin / grossLoss) * 100) / 100 : Infinity;
+  const profitFactor =
+    grossLoss > 0 ? Math.round((grossWin / grossLoss) * 100) / 100 : Infinity;
 
-  return { total, wins, losses, breakEven, winRate, totalPnlPips, avgWinPips, avgLossPips, profitFactor };
+  return {
+    total,
+    wins,
+    losses,
+    breakEven,
+    winRate,
+    totalPnlPips,
+    avgWinPips,
+    avgLossPips,
+    profitFactor,
+  };
 }
 
 // --- JSON migration ---

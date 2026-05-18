@@ -410,7 +410,11 @@ export class WhatsAppChannel implements Channel {
   }
 
   ownsJid(jid: string): boolean {
-    return jid.endsWith('@g.us') || jid.endsWith('@s.whatsapp.net');
+    return (
+      jid.endsWith('@g.us') ||
+      jid.endsWith('@s.whatsapp.net') ||
+      jid.endsWith('@lid')
+    );
   }
 
   async disconnect(): Promise<void> {
@@ -580,12 +584,18 @@ export class WhatsAppChannel implements Channel {
         // an invalid self-referential session and blocking message delivery.
         const botLidParts = this.sock.user?.lid?.split(':');
         const botLidUser = botLidParts?.[0];
-        const botLidDevice = botLidParts ? parseInt(botLidParts[1]?.split('@')[0] ?? '0', 10) : -1;
+        const botLidDevice = botLidParts
+          ? parseInt(botLidParts[1]?.split('@')[0] ?? '0', 10)
+          : -1;
 
         const deviceJids = devices
           .filter(({ user, device }) => {
             // Skip bot's own LID device
-            if (botLidUser && user === botLidUser && (device ?? 0) === botLidDevice) {
+            if (
+              botLidUser &&
+              user === botLidUser &&
+              (device ?? 0) === botLidDevice
+            ) {
               return false;
             }
             return true;
