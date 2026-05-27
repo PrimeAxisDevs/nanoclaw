@@ -4,6 +4,27 @@
 # Stops on first conflict, and aborts before push/restart if the build fails.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST="$(hostname)"
+
+# Send a notification to the NanoClaw main chat. Never fail the sync over it.
+notify() {
+  node "$SCRIPT_DIR/notify.mjs" "$1" || echo "⚠️  could not send notification"
+}
+
+# Notify on any non-zero exit, mapping the known exit codes to a clear reason.
+on_exit() {
+  local code=$?
+  case "$code" in
+    0) ;;
+    1) notify "🔴 NanoClaw sync aborted on ${HOST}: working tree was dirty. Commit/stash and re-run." ;;
+    2) notify "🔴 NanoClaw sync aborted on ${HOST}: merge conflict from upstream. Resolve and re-run. (journalctl --user -u nanoclaw-sync)" ;;
+    3) notify "🔴 NanoClaw sync aborted on ${HOST}: build FAILED — not pushed or restarted, old version still running. (journalctl --user -u nanoclaw-sync)" ;;
+    *) notify "🔴 NanoClaw sync failed on ${HOST} (exit ${code}). Check journalctl --user -u nanoclaw-sync" ;;
+  esac
+}
+trap on_exit EXIT
+
 cd /home/ares/nanoclaw
 
 # Bail if dirty
@@ -38,6 +59,13 @@ for remote in "${REMOTES[@]}"; do
   fi
 done
 
+# Also deploy if we have commits not yet on origin — e.g. a previous run
+# merged successfully but aborted on a failed build before pushing. This lets
+# a transient build failure recover on the next scheduled run.
+if [[ "$(git rev-list --count origin/main..HEAD)" -gt 0 ]]; then
+  CHANGED=1
+fi
+
 if [[ "$CHANGED" -eq 1 ]]; then
   echo "── rebuilding"
   npm install
@@ -51,6 +79,10 @@ if [[ "$CHANGED" -eq 1 ]]; then
   
   echo "── restarting nanoclaw"
   sudo systemctl restart nanoclaw.service
+
+  notify "🟢 NanoClaw sync on ${HOST}: merged upstream changes, build passed, pushed to origin, and restarted."
+else
+  notify "🟢 NanoClaw sync on ${HOST}: already up to date — no changes."
 fi
 
 echo "✅ sync complete"
