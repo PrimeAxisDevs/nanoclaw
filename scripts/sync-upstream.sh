@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Forward-merge upstream + channel forks into PrimeAxisDevs/nanoclaw main
-# Run weekly. Stops on first conflict so you can resolve and re-run.
+# Runs every 2 weeks via the nanoclaw-sync.timer systemd unit.
+# Stops on first conflict, and aborts before push/restart if the build fails.
 set -euo pipefail
 
 cd /home/ares/nanoclaw
@@ -40,8 +41,11 @@ done
 if [[ "$CHANGED" -eq 1 ]]; then
   echo "── rebuilding"
   npm install
-  npm run build 2>/dev/null || pnpm build || echo "build step skipped"
-  
+  if ! npm run build; then
+    echo "❌ build failed — not pushing or restarting. Resolve and re-run."
+    exit 3
+  fi
+
   echo "── pushing to origin"
   git push origin main
   

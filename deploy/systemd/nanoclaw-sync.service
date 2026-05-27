@@ -1,0 +1,10 @@
+[Unit]
+Description=NanoClaw upstream forward-merge sync
+Documentation=https://github.com/PrimeAxisDevs/nanoclaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/nanoclaw/scripts/sync-upstream.sh
+# Output goes to the journal: journalctl --user -u nanoclaw-sync

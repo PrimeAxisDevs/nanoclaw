@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the NanoClaw upstream sync every 2 weeks
+
+[Timer]
+# Fires on the 1st and 15th of each month (~every 2 weeks).
+OnCalendar=*-*-01,15 04:00:00
+# Catch up on the next boot if the machine was off when it was due.
+Persistent=true
+# Spread the load / avoid an exact-time stampede.
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
