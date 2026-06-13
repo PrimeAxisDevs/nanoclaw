@@ -180,8 +180,15 @@ export class WhatsAppChannel implements Channel {
         if (shouldReconnect) {
           this.scheduleReconnect(1);
         } else {
-          logger.info('Logged out. Run /setup to re-authenticate.');
-          process.exit(0);
+          // WhatsApp session logged out (401). Do NOT exit the process — a
+          // single channel losing auth must not take down the whole
+          // multi-channel host (Telegram, etc. keep running). `this.connected`
+          // is already false above; leave WhatsApp dormant and don't
+          // reconnect. Run /setup to re-authenticate and restore WhatsApp.
+          logger.error(
+            'WhatsApp logged out (401). WhatsApp channel disabled; other ' +
+              'channels unaffected. Run /setup to re-authenticate.',
+          );
         }
       } else if (connection === 'open') {
         this.connected = true;
