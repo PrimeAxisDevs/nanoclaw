@@ -189,6 +189,14 @@ export class WhatsAppChannel implements Channel {
             'WhatsApp logged out (401). WhatsApp channel disabled; other ' +
               'channels unaffected. Run /setup to re-authenticate.',
           );
+          // Resolve the initial connect() promise so host startup continues.
+          // The host awaits channel.connect() sequentially (index.ts); without
+          // this, startup hangs here forever and the main message loop never
+          // starts (messages get stored but never processed/answered).
+          if (this.pendingFirstOpen) {
+            this.pendingFirstOpen();
+            this.pendingFirstOpen = undefined;
+          }
         }
       } else if (connection === 'open') {
         this.connected = true;
